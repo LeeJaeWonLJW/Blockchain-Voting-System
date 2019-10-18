@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import pymysql
 from flask_cors import CORS
+from web3 import Web3
 
 app = Flask(__name__)
 CORS(app)
@@ -10,7 +11,7 @@ class Database():
     def __init__(self):
         self.db = pymysql.connect(host='localhost',
                                   user='root',
-                                  password='YOUR PASSWORD',
+                                  password='worldstar3',
                                   db='vote_system',
                                   charset='utf8')
         self.cursor = self.db.cursor(pymysql.cursors.DictCursor)
@@ -30,6 +31,46 @@ class Database():
 
     def commit(self):
         self.db.commit()
+
+
+class Wallet:
+    address = None
+    private_key = None
+
+
+class ETH(object):
+    def __init__(self):
+        self.w3 = Web3(Web3.HTTPProvider("https://ropsten.infura.io/v3/e316220caec545259d80d76dc192c4b7"))
+
+    def transfer(self, data):
+        wallet = Wallet()
+        with open('wallet/address', 'r') as address:
+            wallet.address = address.read()
+        with open('wallet/private_key', 'r') as private_key:
+            wallet.private_key = private_key.read()
+
+        try:
+            signed_txn = self.w3.eth.account.signTransaction(dict(
+                nonce=self.w3.eth.getTransactionCount(wallet.address),
+                gasPrice=self.w3.eth.gasPrice,
+                gas=100000,
+                to=wallet.address,
+                value=Web3.toWei(0, 'ether'),
+                data=data.encode()
+            ),
+                eval(wallet.private_key))
+
+            self.w3.eth.sendRawTransaction(signed_txn.rawTransaction)
+
+            return jsonify({
+                "success": True,
+                "msg": "ETH pending Successfully!!",
+            }), 200
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "msg": "Not enough ETH!!",
+            }), 200
 
 
 @app.route('/vote/new', methods=['GET'])
@@ -69,6 +110,10 @@ def vote_voting():
         sql_update_count = "UPDATE candidate SET count = {} WHERE name='{}' AND tel='{}'".format(row, candidate_name, candidate_tel)
         db.execute(sql_update_count)
         db.commit()
+
+        eth = ETH()
+        print(eth.transfer("candidate : {}-{} / user : {}-{}".format(candidate_name, candidate_tel, user_name, user_tel)))
+
         return jsonify({"status": True}), 200
     except IndexError:
         return jsonify({
